@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
-	"github.com/maximorov/a-crawler/internal/pkg"
+	"github.com/maximorov/a-crawler/internal/pkg/crawler"
 	"log"
 	"os"
+	"os/signal"
 )
 
 func main() {
@@ -19,10 +21,18 @@ func main() {
 	}
 
 	domain := args[0]
-	maxWorkers := *threads
+	workersNum := *threads
 
-	crawler, err := pkg.NewCrawler(domain, maxWorkers)
+	processor, err := crawler.NewMaster(domain, workersNum)
 	if err != nil {
-		log.Fatalf("Помилка створення краулера: %v", err)
+		log.Fatalf("Crawler creating error: %v", err)
 	}
+	log.Printf("Crawling %s with %d workers\n", domain, workersNum)
+
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
+	defer cancel()
+
+	processor.Run(ctx)
+
+	crawler.View(processor.Results())
 }
