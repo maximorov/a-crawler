@@ -2,11 +2,8 @@ package crawler
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"golang.org/x/net/html"
+	"github.com/gocolly/colly"
 	"log"
-	"net/http"
 	"net/url"
 	"strings"
 )
@@ -14,18 +11,20 @@ import (
 type crawler struct {
 	id     int
 	master *Master
-	client *http.Client
+	cl     *colly.Collector
 }
 
 func newCrawler(id int, master *Master) *crawler {
 	return &crawler{
 		id:     id,
 		master: master,
-		client: &http.Client{},
+		cl:     colly.NewCollector(),
 	}
 }
 
 func (w *crawler) run(ctx context.Context) {
+	w.init()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -34,54 +33,35 @@ func (w *crawler) run(ctx context.Context) {
 			w.master.wg.Add(1)
 			defer w.master.wg.Done()
 
-			log.Printf("Crawler %d is crawling %s\n", w.id, link)
-			if err := w.crawl(link); err != nil {
-				w.master.errors <- err
-			}
+			w.master.errors <- w.cl.Visit(link)
 		}
 	}
 }
 
-func (w *crawler) crawl(link string) error {
-	resp, err := w.client.Get(link)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return errors.New(fmt.Sprintf("status code is %s", resp.Status))
-	}
-
-	doc, err := html.Parse(resp.Body)
-	if err != nil {
-		return err
-	}
-
-	var f func(*html.Node)
-	f = func(n *html.Node) {
-		if n.Type == html.ElementNode && n.Data == "a" {
-			for _, attr := range n.Attr {
-				if attr.Key == "href" {
-					if w.isSameDomain(attr.Val) {
-						w.master.foundLinks <- attr.Val
-					}
-				}
-			}
+func (w *crawler) init() {
+	w.cl.OnRequest(func(r *colly.Request) {
+		log.Printf("Crawler %d is crawling %s\n", w.id, r.URL.String())
+	})
+	w.cl.OnError(func(_ *colly.Response, err error) {
+		w.master.errors <- err
+	})
+	w.cl.OnHTML("a[href]", func(e *colly.HTMLElement) {
+		if link, ok := w.checkDomain(e.Attr("href")); ok {
+			w.master.foundLinks <- link
 		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			f(c)
-		}
-	}
-	f(doc)
-
-	return nil
+	})
 }
 
-func (w *crawler) isSameDomain(linkStr string) bool {
+func (w *crawler) checkDomain(linkStr string) (string, bool) {
 	u, err := url.Parse(linkStr)
 	if err != nil {
-		return false
+		return ``, false
 	}
-	return strings.HasSuffix(u.Host, w.master.domain.Hostname())
+
+	if u.Host == `` && strings.Contains(u.Path, `/`) {
+		u.Scheme = w.master.domain.Scheme
+		u.Host = w.master.domain.Hostname()
+	}
+
+	return u.String(), strings.HasSuffix(u.Host, w.master.domain.Hostname())
 }

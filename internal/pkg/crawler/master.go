@@ -18,7 +18,6 @@ type Master struct {
 	domain        *url.URL
 	results       map[string]int
 	visited       map[string]bool
-	mu            sync.Mutex
 	wg            sync.WaitGroup
 	linksToCrawl  chan string
 	foundLinks    chan string
@@ -47,7 +46,7 @@ func NewMaster(domain string, workersNumber int) (*Master, error) {
 		visited:       make(map[string]bool),
 		linksToCrawl:  make(chan string, 1000),
 		foundLinks:    make(chan string, 1000),
-		errors:        make(chan error, 5),
+		errors:        make(chan error, 10),
 		workersNumber: workersNumber,
 	}, nil
 }
@@ -92,9 +91,6 @@ func (m *Master) handleFoundLinks(ctx context.Context) {
 				m.errors <- err
 				continue
 			}
-
-			m.mu.Lock()
-			defer m.mu.Unlock()
 
 			if !m.visited[cleaned] {
 				m.visited[cleaned] = true
