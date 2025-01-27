@@ -30,9 +30,6 @@ func (w *crawler) run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case link := <-w.master.linksToCrawl:
-			w.master.wg.Add(1)
-			defer w.master.wg.Done()
-
 			w.master.errors <- w.cl.Visit(link)
 		}
 	}
@@ -40,7 +37,11 @@ func (w *crawler) run(ctx context.Context) {
 
 func (w *crawler) init() {
 	w.cl.OnRequest(func(r *colly.Request) {
+		w.master.wg.Add(1)
 		log.Printf("Crawler %d is crawling %s\n", w.id, r.URL.String())
+	})
+	w.cl.OnResponse(func(_ *colly.Response) {
+		w.master.wg.Done()
 	})
 	w.cl.OnError(func(_ *colly.Response, err error) {
 		w.master.errors <- err

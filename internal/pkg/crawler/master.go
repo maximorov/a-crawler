@@ -72,7 +72,7 @@ func (m *Master) Run(ctx context.Context) {
 
 	m.wg.Add(1)
 	go func() {
-		<-time.After(1 * time.Second)
+		<-time.After(2 * time.Second)
 		m.wg.Done()
 	}()
 
